@@ -1,27 +1,23 @@
+
 const jwt = require("jsonwebtoken");
+const dotenv = require("dotenv");
+dotenv.config();
 const User = require("../model/userSchema");
-const fs = require("fs");
-const authenticate = async (req, res, next) => {
-  try {
-    const SECRET_KEY = fs.readFileSync("private.key");
-    const token = req.cookies.jwtoken;
-    const verifyToken = jwt.verify(token, SECRET_KEY);
-
-    const rootUser = await User.findOne({
-      _id: verifyToken._id,
-      "tokens.token": token,
-    });
-
-    if (!rootUser) {
-      throw new Error("User not found");
-    }
-    req.token = token;
-    req.rootUser = rootUser;
-    req.userID = rootUser._id;
-
-    next();
-  } catch (err) {
-    res.status(401).send("Unauthorized");
+const secret = process.env.SECRET;
+module.exports = (req, res, next) => {
+  const { authorization } = req.headers;
+  if (!authorization) {
+    return res.status(401).json({ error: "Unauthorized user" });
   }
+  const token = authorization.replace("Bearer ", "");
+  jwt.verify(token, secret, (err, payload) => {
+    if (err) {
+      return res.status(401).json({ error: "you must be logged in" });
+    }
+    const { _id } = payload;
+    User.findById(_id).then((userdata) => {
+      req.user = userdata;
+      next();
+    });
+  });
 };
-module.exports = authenticate;

@@ -1,71 +1,69 @@
 const express = require("express");
 const router = express.Router();
-const User = require("../model/userSchema");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const User = require("../model/userSchema");
+const dotenv = require("dotenv");
+dotenv.config();
+const secret = process.env.SECRET;
 const authenticate = require("../authenticate/authenticate");
-router.get("/", (req, res) => {
-  res.send("hello from server");
-});
-// user register routes
-router.post("/register", async (req, res) => {
+
+//sending post request to signup
+router.post("/signup", async (req, res) => {
+  const { name, email, password } = req.body;
+
   try {
-    const {name, email, password, cpassword } = req.body;
-    if (!email || !password || !cpassword) {
-      return res.status(422).json({ error: "Please fill the data" });
-    }
-    const userExist = await User.findOne({ email: email });
-    if (userExist) {
-      return res.status(404).json({ message: "Email is already registered" });
-    }
-    const user = new User({ name,email, password, cpassword });
-    const userData = await user.save();
-    if (userData) {
-      return res.status(201).json({ message: "User Registered Successfully" });
-    } else {
-      return res.status(404).json({ error: "Failed to register" });
-    }
+    const oldUser = await User.findOne({ email: email });
+    if (oldUser)
+      return res.status(400).json({ message: "User already exists" });
+    const hashedPassword = await bcrypt.hash(password, 12);
+
+    const result = await User.create({
+      name,
+      email,
+      password: hashedPassword,
+    });
+
+    const token = jwt.sign({ email: result.email, id: result._id }, secret, {
+      expiresIn: "1h",
+    });
+
+    res.status(201).json({ result, token });
   } catch (error) {
-    console.log(error.message);
+    res.status(500).json({ message: "Something went wrong" });
+
+    console.log(error);
   }
 });
-//user login routes
+
+//sending post request to login
 router.post("/login", async (req, res) => {
+  const { email, password } = req.body;
+
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
-      return res.status(400).json({ error: "Please fill the data" });
-    }
-    const userLogin = await User.findOne({ email: email });
-    if (userLogin) {
-      const isMatch = await bcrypt.compare(password, userLogin.password);
-      const token = await userLogin.generateAuthToken();
-      res.cookie("jwtoken", token, {
-        expires: new Date(Date.now() + 25892000000),
-        httpOnly: true,
-        secure: false,
-      });
-      if (!isMatch) {
-        res.status(400).json({ error: "Invalid credientials" });
-      } else {
-        res.json({ message: "User Login successfully" });
-      }
-    } else {
-      res.status(400).json({ error: "Invalid credientials" });
-    }
-  } catch (error) {
-    console.log(error.message);
+    const oldUser = await User.findOne({ email: email });
+
+    if (!oldUser)
+      return res.status(404).json({ message: "User doesn't exist" });
+
+    const isPasswordCorrect = await bcrypt.compare(password, oldUser.password);
+
+    if (!isPasswordCorrect)
+      return res.status(400).json({ message: "Invalid credentials" });
+
+    const token = jwt.sign({ email: oldUser.email, id: oldUser._id }, secret, {
+      expiresIn: "1h",
+    });
+
+    res.status(200).json({ result: oldUser, token });
+  } catch (err) {
+    res.status(500).json({ message: "Something went wrong" });
   }
 });
-// checking user authenticate or not routes
-router.get("/getData", authenticate, (req, res) => {
-  res.send(req.rootUser);
-});
-//user log out routes
-router.get("/logout", (req, res) => {
-  res.clearCookie("jwtoken", {
-    path: "/",
-  });
-  res.status(201).send("User Logout");
-});
+
+//sending get request to home where user get validate using authenticate middleware using jwt token
+router.get("/home",authenticate,(req,res)=>{
+   res.status(200).send({message:"Successfull validation"})
+})
 
 module.exports = router;
